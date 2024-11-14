@@ -2,28 +2,29 @@ import random
 import tkinter as tk
 from tkinter import ttk
 ##import sqlite3
-import mysql.connector
-mysql.connector.locales = {'eng': 'en'}
-from mysql.connector import Error
+import pymysql  
+from pymysql import Error 
 from datetime import datetime
-from tkinter import simpledialog 
+from tkinter import simpledialog
 from tkinter import messagebox
 from decimal import Decimal
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import os
 
+os.environ['MYSQL_CLIENT_FLAGS'] = 'en_US'
+
 # Função para conectar ao banco de dados (obs: devido o fato de ja ter feito a conecao do estoque antes de criar essa funcao optei por nao altera a funcao show_stock_window de estoque)
 def conectar_banco():
     try:
-        conn = mysql.connector.connect(
+        conn = pymysql.connect(
             host='localhost',
             database='papelaria',
-            user='?????????',
-            password='?????????'
+            user='adm',
+            password='************************'
         )
         return conn
-    except mysql.connector.Error as err:
+    except pymysql.MySQLError as err:
         messagebox.showerror("Erro de Conexão", f"Erro ao conectar ao banco de dados: {err}")
         return None
 
@@ -42,62 +43,106 @@ def gerar_pdf(id_caixa):
 
     cursor = conn.cursor()
 
-    # Modifica a consulta para buscar apenas pelo id_caixa especificado
-    query = """
-        SELECT data_caixa, saldo_inicial, total_vendas, total_dinheiro, total_pix, total_credito, total_debito 
-        FROM caixa_dia 
-        WHERE id_caixa = %s
-    """
-    cursor.execute(query, (id_caixa,))
-    registro = cursor.fetchone()
+    try:
+        # Consulta o caminho do PDF na tabela pdf_caminhos
+        cursor.execute("SELECT caminho_pdf FROM pdf_caminhos ORDER BY id DESC LIMIT 1")
+        resultado = cursor.fetchone()
+        
+        if resultado:
+            destino_pasta = resultado[0].replace("\\", "/")  # Corrige para "/"
+        else:
+            messagebox.showwarning("Aviso", "Nenhum caminho de PDF encontrado no banco de dados.")
+            return
 
-    if registro:
-        data_caixa, saldo_inicial, total_vendas, total_dinheiro, total_pix, total_credito, total_debito = registro
+        # Consulta para buscar os dados do caixa específico pelo id_caixa
+        query = """
+            SELECT data_caixa, saldo_inicial, total_vendas, total_dinheiro, total_pix, total_credito, total_debito 
+            FROM caixa_dia 
+            WHERE id_caixa = %s
+        """
+        cursor.execute(query, (id_caixa,))
+        registro = cursor.fetchone()
 
-        # Formata a data do caixa para usar no nome do arquivo (formato: YYYY-MM-DD)
-        data_formatada = data_caixa.strftime('%Y-%m-%d')
-        destino_pdf = f"C:/Users/Paulo Vieira/OneDrive/Área de Trabalho/fechamento_do_dia_{data_formatada}.pdf"
+        if registro:
+            data_caixa, saldo_inicial, total_vendas, total_dinheiro, total_pix, total_credito, total_debito = registro
 
-        # Garante que o diretório existe
-        diretorio = os.path.dirname(destino_pdf)
-        if not os.path.exists(diretorio):
-            os.makedirs(diretorio)
+            # Formata a data do caixa para usar no nome do arquivo (formato: YYYY-MM-DD)
+            data_formatada = data_caixa.strftime('%Y-%m-%d')
+            destino_pdf = os.path.join(destino_pasta, f"fechamento_do_dia_{data_formatada}.pdf")
 
-        # Cria um objeto canvas para gerar o PDF
-        pdf = canvas.Canvas(destino_pdf, pagesize=A4)
+            # Garante que o diretório existe
+            diretorio = os.path.dirname(destino_pdf)
+            if not os.path.exists(diretorio):
+                os.makedirs(diretorio)
 
-        # Adiciona as informações do caixa ao PDF
-        y_position = 750  # Posição vertical inicial para o texto
-        pdf.drawString(100, y_position, "Relatório do Caixa do Dia")
-        y_position -= 20  # Espaço entre as linhas
+            # Cria um objeto canvas para gerar o PDF
+            pdf = canvas.Canvas(destino_pdf, pagesize=A4)
 
-        pdf.drawString(100, y_position, f"Data: {data_caixa}")
-        y_position -= 15
-        pdf.drawString(100, y_position, f"Saldo Inicial: R$ {saldo_inicial:.2f}")
-        y_position -= 15
-        pdf.drawString(100, y_position, f"Total Vendas: R$ {total_vendas:.2f}")
-        y_position -= 15
-        pdf.drawString(100, y_position, f"Total Dinheiro: R$ {total_dinheiro:.2f}")
-        y_position -= 15
-        pdf.drawString(100, y_position, f"Total Pix: R$ {total_pix:.2f}")
-        y_position -= 15
-        pdf.drawString(100, y_position, f"Total Crédito: R$ {total_credito:.2f}")
-        y_position -= 15
-        pdf.drawString(100, y_position, f"Total Débito: R$ {total_debito:.2f}")
+            # Adiciona as informações do caixa ao PDF
+            y_position = 750  # Posição vertical inicial para o texto
+            pdf.drawString(100, y_position, "Relatório do Caixa do Dia")
+            y_position -= 20  # Espaço entre as linhas
 
-        # Salva o documento PDF
-        pdf.save()
+            pdf.drawString(100, y_position, f"Data: {data_caixa}")
+            y_position -= 15
+            pdf.drawString(100, y_position, f"Saldo Inicial: R$ {saldo_inicial:.2f}")
+            y_position -= 15
+            pdf.drawString(100, y_position, f"Total Vendas: R$ {total_vendas:.2f}")
+            y_position -= 15
+            pdf.drawString(100, y_position, f"Total Dinheiro: R$ {total_dinheiro:.2f}")
+            y_position -= 15
+            pdf.drawString(100, y_position, f"Total Pix: R$ {total_pix:.2f}")
+            y_position -= 15
+            pdf.drawString(100, y_position, f"Total Crédito: R$ {total_credito:.2f}")
+            y_position -= 15
+            pdf.drawString(100, y_position, f"Total Débito: R$ {total_debito:.2f}")
 
-        print(f"PDF gerado em: {destino_pdf}")
-    else:
-        messagebox.showwarning("Aviso", f"Nenhum registro encontrado para o id_caixa: {id_caixa}")
+            # Salva o documento PDF
+            pdf.save()
 
-    # Fecha a conexão com o banco de dados
-    cursor.close()
-    conn.close()
+            print(f"PDF gerado em: {destino_pdf}")
+        else:
+            messagebox.showwarning("Aviso", f"Nenhum registro encontrado para o id_caixa: {id_caixa}")
 
+    except pymysql.MySQLError as err:
+        messagebox.showerror("Erro", f"Erro ao consultar o banco de dados: {err}")
+    
+    finally:
+        # Fecha a conexão com o banco de dados
+        cursor.close()
+        conn.close()
 
-    print(f"PDF gerado em: {destino_pdf}")
+def alterar_caminho_pdf():
+    # Conecta ao banco de dados
+    conn = conectar_banco()
+    if conn is None:
+        return  # Sai da função se não conseguir conectar
+
+    cursor = conn.cursor()
+
+    try:
+        # Pergunta ao usuário pelo novo caminho
+        novo_caminho = simpledialog.askstring("Alterar Caminho do PDF", "Digite o novo caminho para salvar o PDF:")
+        
+        if novo_caminho:
+            # Substitui as barras invertidas por barras normais
+            novo_caminho = novo_caminho.replace("\\", "/")
+            
+            # Atualiza o campo caminho_pdf no banco de dados para o id 1
+            cursor.execute("UPDATE pdf_caminhos SET caminho_pdf = %s WHERE id = 1", (novo_caminho,))
+            conn.commit()
+            
+            messagebox.showinfo("Sucesso", "Caminho do PDF alterado com sucesso!")
+        else:
+            messagebox.showwarning("Aviso", "Nenhum caminho foi inserido.")
+
+    except pymysql.MySQLError as err:
+        messagebox.showerror("Erro de Banco de Dados", f"Erro ao atualizar o caminho do PDF: {err}")
+    
+    finally:
+        # Fecha a conexão com o banco de dados
+        cursor.close()
+        conn.close()
 
 def caixa_status():
     # Configurações da janela de status do caixa
@@ -152,7 +197,8 @@ def caixa_status():
                 status_label.config(text="Status do Caixa: Aberto", bg="green")
                 status_bar.config(bg="green")
                 preparar_caixa_aberto()  # Chama a função para caixa aberto
-        except mysql.connector.Error as err:
+        except pymysql.MySQLError as err:
+
             messagebox.showerror("Erro", f"Erro ao consultar o banco de dados: {err}")
         finally:
             cursor.close()
@@ -217,7 +263,8 @@ def caixa_status():
             status_label.config(text="Status do Caixa: Aberto", bg="green")
             status_bar.config(bg="green")
             preparar_caixa_aberto()  # Atualiza o layout para "caixa aberto"
-        except mysql.connector.Error as err:
+        except pymysql.MySQLError as err:
+
             messagebox.showerror("Erro", f"Erro ao inserir no banco de dados: {err}")
         finally:
             cursor.close()
@@ -323,7 +370,8 @@ def caixa_status():
                         # Fechar a janela após fechar o caixa
                         detalhes_window.destroy()
 
-                    except mysql.connector.Error as err:
+                    except pymysql.MySQLError as err:
+
                         messagebox.showerror("Erro", f"Erro ao fechar o caixa: {err}")
                     finally:
                         cursor.close()
@@ -368,7 +416,8 @@ def caixa_status():
                 no_caixa_label = tk.Label(scrollable_frame, text="Nenhum caixa aberto.", font=("Arial", 12), bg="lightblue")
                 no_caixa_label.grid(row=1, column=0, padx=10, pady=10, sticky="w")
 
-        except mysql.connector.Error as err:
+        except pymysql.MySQLError as err:
+
             messagebox.showerror("Erro", f"Erro ao consultar o banco de dados: {err}")
         finally:
             cursor.close()
@@ -426,10 +475,14 @@ def caixa_status():
                 no_caixa_label.pack(pady=20)
 
          
-            # Adicionar o botão "Fechar" na parte inferior
+            # Adicionar o botão "Fechar" e "altera o caminho do pdf" na parte inferior
+            botao_alterar_caminho_pdf = tk.Button(right_frame, text="Alterar Caminho PDF", font=("Arial", 12), command=alterar_caminho_pdf)
+            botao_alterar_caminho_pdf.pack(side=tk.TOP, pady=10)
+
             fechar_button = tk.Button(right_frame, text="Fechar Caixa", font=("Arial", 14), bg="red", fg="white", command=fechar_caixa)
             fechar_button.pack(side=tk.BOTTOM, pady=20)
-        except mysql.connector.Error as err:
+        except pymysql.MySQLError as err:
+
             messagebox.showerror("Erro", f"Erro ao consultar o banco de dados: {err}")
         finally:
             cursor.close()
@@ -543,7 +596,8 @@ def show_stock_window(existing_window=None):
                     """, (new_nome, new_valor, codigo))
                     conn.commit()
 
-                except mysql.connector.Error as err:
+                except pymysql.MySQLError as err:
+
                     messagebox.showerror("Erro ao Atualizar", f"Erro ao atualizar o item: {err}")
 
                 finally:
@@ -565,7 +619,8 @@ def show_stock_window(existing_window=None):
                     cursor.execute("DELETE FROM estoque WHERE codigo = %s", (codigo,))
                     conn.commit()
 
-                except mysql.connector.Error as err:
+                except pymysql.MySQLError as err:
+
                     messagebox.showerror("Erro ao Excluir", f"Erro ao excluir o item: {err}")
 
                 finally:
@@ -632,7 +687,8 @@ def show_stock_window(existing_window=None):
                     add_window.destroy()  # Fechar a janela de adicionar item
                     show_stock_window()  # Reabrir a janela de estoque atualizada
 
-                except mysql.connector.Error as err:
+                except pymysql.MySQLError as err:
+
                     messagebox.showerror("Erro", f"Erro ao conectar ao banco de dados: {err}")
                 except Exception as e:
                     messagebox.showerror("Erro", f"Ocorreu um erro: {e}")
@@ -719,7 +775,8 @@ def show_stock_window(existing_window=None):
         # Exibe todos os itens inicialmente
         update_item_list(items)
 
-    except mysql.connector.Error as err:
+    except pymysql.MySQLError as err:
+
         messagebox.showerror("Erro de Consulta", f"Erro ao executar a consulta: {err}")
     finally:
         cursor.close()
@@ -761,7 +818,8 @@ def adicionar_item_venda(venda_id, codigo_item, quantidade, valor_unitario):
         )
         conn.commit()
         return True
-    except mysql.connector.Error as err:
+    except pymysql.MySQLError as err:
+
         messagebox.showerror("Erro", f"Erro ao adicionar item à venda: {err}")
         return False
     finally:
@@ -787,7 +845,8 @@ def pagar(id_venda, janela_venda):
             messagebox.showerror("Erro", "Venda não encontrada.")
             return  # Se não encontrar a venda, sair da função
 
-    except mysql.connector.Error as err:
+    except pymysql.MySQLError as err:
+
         messagebox.showerror("Erro no Banco de Dados", f"Ocorreu um erro: {err}")
         return
     finally:
@@ -902,7 +961,8 @@ def pagar(id_venda, janela_venda):
             conn.commit()
             messagebox.showinfo("Sucesso", "Pagamento registrado com sucesso!")
 
-        except mysql.connector.Error as err:
+        except pymysql.MySQLError as err:
+
             messagebox.showerror("Erro no Banco de Dados", f"Ocorreu um erro: {err}")
         finally:
             cursor.close()
@@ -948,7 +1008,8 @@ def abrir_janela_editar(venda_id, nome_caixa):
         else:
             nome_venda = f"Venda {venda_id}"  # Caso não encontre o nome, usar o ID como fallback
 
-    except mysql.connector.Error as err:
+    except pymysql.MySQLError as err:
+
         messagebox.showerror("Erro", f"Erro ao buscar o nome da venda: {err}")
         return
     finally:
@@ -1017,7 +1078,8 @@ def abrir_janela_editar(venda_id, nome_caixa):
                 cursor_valor.close()
                 conn_atualizar_valor.close()
 
-            except mysql.connector.Error as err:
+            except pymysql.MySQLError as err:
+
                 messagebox.showerror("Erro", f"Erro ao atualizar o valor total: {err}")
 
         def atualizar_quantidade(item_id, nova_quantidade):
@@ -1032,7 +1094,8 @@ def abrir_janela_editar(venda_id, nome_caixa):
                 conn_atualizar.close()
                 atualizar_valor_total()  # Atualizar o valor total da venda
 
-            except mysql.connector.Error as err:
+            except pymysql.MySQLError as err:
+
                 messagebox.showerror("Erro", f"Erro ao atualizar a quantidade: {err}")
 
         def deletar_item(item_id):
@@ -1051,7 +1114,8 @@ def abrir_janela_editar(venda_id, nome_caixa):
                 janela_editar.destroy()
                 reabrir()
 
-            except mysql.connector.Error as err:
+            except pymysql.MySQLError as err:
+
                 messagebox.showerror("Erro", f"Erro ao deletar o item: {err}")
 
         # Exibir os itens no frame
@@ -1079,7 +1143,8 @@ def abrir_janela_editar(venda_id, nome_caixa):
                                       command=lambda id=item_id: deletar_item(id))
             botao_deletar.pack(side=tk.LEFT, padx=(10, 10))
 
-    except mysql.connector.Error as err:
+    except pymysql.MySQLError as err:
+
         messagebox.showerror("Erro ao carregar itens", f"Erro ao consultar itens da venda: {err}")
 
     finally:
@@ -1200,7 +1265,8 @@ def abrir_janela_venda(nome_caixa):
         else:
             valor_total_label.config(text="Valor total: R$ 0.00")  # Caso não encontre a venda ou a venda não esteja aberta
 
-    except mysql.connector.Error as err:
+    except pymysql.MySQLError as err:
+
         messagebox.showerror("Erro ao carregar venda", f"Erro ao consultar valor total: {err}")
 
     finally:
@@ -1256,7 +1322,8 @@ def abrir_janela_venda(nome_caixa):
             if novo_valor_total:
                 valor_total_label.config(text=f"Valor total: R$ {novo_valor_total[0]:.2f}")
 
-        except mysql.connector.Error as err:
+        except pymysql.MySQLError as err:
+
             messagebox.showerror("Erro ao carregar itens", f"Erro ao consultar itens da venda: {err}")
 
         finally:
@@ -1346,7 +1413,8 @@ def abrir_janela_venda(nome_caixa):
                 else:
                     messagebox.showwarning("Erro", "Venda não encontrada.")
 
-            except mysql.connector.Error as err:
+            except pymysql.MySQLError as err:
+
                 messagebox.showerror("Erro", f"Erro ao atualizar venda: {err}")
 
             finally:
@@ -1377,7 +1445,8 @@ def abrir_janela_venda(nome_caixa):
             conn.commit()  # Confirmar a transação
             return True  # Retorna True se a inserção for bem-sucedida
 
-        except mysql.connector.Error as err:
+        except pymysql.MySQLError as err:
+
             messagebox.showerror("Erro ao adicionar item", f"Erro ao inserir dados da venda: {err}")
             return False  # Retorna False em caso de erro
 
@@ -1401,7 +1470,8 @@ def buscar_item_no_estoque(codigo):
         result = cursor.fetchone()
         return result if result else None
 
-    except mysql.connector.Error as err:
+    except pymysql.MySQLError as err:
+
         messagebox.showerror("Erro ao buscar item", f"Erro ao consultar item no estoque: {err}")
         return None
 
@@ -1438,7 +1508,8 @@ def criar_nova_venda():
         cursor.execute(query_venda, (nome_caixa, None, 0.00, 'sim'))
         conn.commit()
 
-    except mysql.connector.Error as err:
+    except pymysql.MySQLError as err:
+
         messagebox.showerror("Erro ao Inserir", f"Erro ao inserir nova venda: {err}")
         conn.rollback()
 
@@ -1508,7 +1579,8 @@ def carregar_vendas_abertas():
             # Adicionar o frame (caixa) na janela principal
             caixa_frame.grid(row=linha, column=coluna, padx=20, pady=10)  # Espaçamento entre as caixas
 
-    except mysql.connector.Error as err:
+    except pymysql.MySQLError as err:
+
         messagebox.showerror("Erro ao carregar vendas", f"Erro ao consultar vendas abertas: {err}")
 
     finally:
@@ -1554,4 +1626,3 @@ root.bind("<Configure>", on_resize)
 
 # Iniciando o loop da interface
 root.mainloop()
-
